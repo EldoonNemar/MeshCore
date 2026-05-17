@@ -208,6 +208,13 @@ build_repeater_firmwares() {
 
 }
 
+build_repeater_mqtt_firmwares() {
+
+  # build all repeater mqtt firmwares
+  build_all_firmwares_by_suffix "_repeater_observer_mqtt"
+
+}
+
 build_companion_firmwares() {
 
 #  # build specific companion firmwares
@@ -239,10 +246,23 @@ build_room_server_firmwares() {
 
 }
 
+build_room_server_firmwares() {
+
+#  # build specific room server firmwares
+#  build_firmware "Heltec_v3_room_server"
+#  build_firmware "RAK_4631_room_server"
+
+  # build all room server firmwares
+  build_all_firmwares_by_suffix "_room_server_observer_mqtt"
+
+}
+
 build_firmwares() {
   build_companion_firmwares
   build_repeater_firmwares
   build_room_server_firmwares
+  build_repeater_mqtt_firmwares
+  build_room_server_mqtt_firmwares
 }
 
 # clean build dir
@@ -273,6 +293,10 @@ elif [[ $1 == "build-companion-firmwares" ]]; then
   build_companion_firmwares
 elif [[ $1 == "build-repeater-firmwares" ]]; then
   build_repeater_firmwares
+elif [[ $1 == "build-repeater-mqtt-firmwares" ]]; then
+  build_repeater_mqtt_firmwares
 elif [[ $1 == "build-room-server-firmwares" ]]; then
   build_room_server_firmwares
+elif [[ $1 == "build-room-server-mqtt-firmwares" ]]; then
+  build_room_server_mqtt_firmwares
 fi
