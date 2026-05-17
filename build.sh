@@ -246,7 +246,7 @@ build_room_server_firmwares() {
 
 }
 
-build_room_server_firmwares() {
+build_room_server_mqtt_firmwares() {
 
 #  # build specific room server firmwares
 #  build_firmware "Heltec_v3_room_server"
