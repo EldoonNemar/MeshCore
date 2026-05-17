@@ -232,7 +232,7 @@ static void setMQTTPrefsDefaults(MQTTPrefs* prefs) {
   prefs->mqtt_tx_enabled = 0;        // disabled by default (RX only)
   prefs->mqtt_status_interval = 300000; // 5 minutes default
   prefs->mqtt_analyzer_us_enabled = 1; // enabled by default
-  prefs->mqtt_analyzer_eu_enabled = 1; // enabled by default
+  prefs->mqtt_analyzer_ecmc_enabled = 1; // enabled by default
   #ifdef MQTT_WIFI_POWER_SAVE_DEFAULT
   prefs->wifi_power_save = MQTT_WIFI_POWER_SAVE_DEFAULT; // 0=min, 1=none, 2=max
   #else
@@ -354,7 +354,7 @@ void CommonCLI::syncMQTTPrefsToNodePrefs() {
   StrHelper::strncpy(_prefs->mqtt_username, _mqtt_prefs.mqtt_username, sizeof(_prefs->mqtt_username));
   StrHelper::strncpy(_prefs->mqtt_password, _mqtt_prefs.mqtt_password, sizeof(_prefs->mqtt_password));
   _prefs->mqtt_analyzer_us_enabled = _mqtt_prefs.mqtt_analyzer_us_enabled;
-  _prefs->mqtt_analyzer_eu_enabled = _mqtt_prefs.mqtt_analyzer_eu_enabled;
+  _prefs->mqtt_analyzer_ecmc_enabled = _mqtt_prefs.mqtt_analyzer_ecmc_enabled;
   StrHelper::strncpy(_prefs->mqtt_owner_public_key, _mqtt_prefs.mqtt_owner_public_key, sizeof(_prefs->mqtt_owner_public_key));
   StrHelper::strncpy(_prefs->mqtt_email, _mqtt_prefs.mqtt_email, sizeof(_prefs->mqtt_email));
 }
@@ -379,7 +379,7 @@ void CommonCLI::syncNodePrefsToMQTTPrefs() {
   StrHelper::strncpy(_mqtt_prefs.mqtt_username, _prefs->mqtt_username, sizeof(_mqtt_prefs.mqtt_username));
   StrHelper::strncpy(_mqtt_prefs.mqtt_password, _prefs->mqtt_password, sizeof(_mqtt_prefs.mqtt_password));
   _mqtt_prefs.mqtt_analyzer_us_enabled = _prefs->mqtt_analyzer_us_enabled;
-  _mqtt_prefs.mqtt_analyzer_eu_enabled = _prefs->mqtt_analyzer_eu_enabled;
+  _mqtt_prefs.mqtt_analyzer_ecmc_enabled = _prefs->mqtt_analyzer_ecmc_enabled;
   StrHelper::strncpy(_mqtt_prefs.mqtt_owner_public_key, _prefs->mqtt_owner_public_key, sizeof(_mqtt_prefs.mqtt_owner_public_key));
   StrHelper::strncpy(_mqtt_prefs.mqtt_email, _prefs->mqtt_email, sizeof(_mqtt_prefs.mqtt_email));
 }
@@ -1044,8 +1044,8 @@ void CommonCLI::handleSetCmd(uint32_t sender_timestamp, char* command, char* rep
     _prefs->mqtt_analyzer_us_enabled = memcmp(&config[17], "on", 2) == 0;
     savePrefs();
     strcpy(reply, "OK");
-  } else if (memcmp(config, "mqtt.analyzer.eu ", 17) == 0) {
-    _prefs->mqtt_analyzer_eu_enabled = memcmp(&config[17], "on", 2) == 0;
+  } else if (memcmp(config, "mqtt.analyzer.ecmc ", 17) == 0) {
+    _prefs->mqtt_analyzer_ecmc_enabled = memcmp(&config[17], "on", 2) == 0;
     savePrefs();
     strcpy(reply, "OK");
   } else if (memcmp(config, "mqtt.owner ", 11) == 0) {
@@ -1279,8 +1279,8 @@ void CommonCLI::handleGetCmd(uint32_t sender_timestamp, char* command, char* rep
     sprintf(reply, "> %d", _prefs->timezone_offset);
   } else if (memcmp(config, "mqtt.analyzer.us", 17) == 0) {
     sprintf(reply, "> %s", _prefs->mqtt_analyzer_us_enabled ? "on" : "off");
-  } else if (memcmp(config, "mqtt.analyzer.eu", 17) == 0) {
-    sprintf(reply, "> %s", _prefs->mqtt_analyzer_eu_enabled ? "on" : "off");
+  } else if (memcmp(config, "mqtt.analyzer.ecmc", 17) == 0) {
+    sprintf(reply, "> %s", _prefs->mqtt_analyzer_ecmc_enabled ? "on" : "off");
   } else if (sender_timestamp == 0 && memcmp(config, "mqtt.owner", 10) == 0) {
     if (_prefs->mqtt_owner_public_key[0] != '\0') {
       sprintf(reply, "> %s", _prefs->mqtt_owner_public_key);

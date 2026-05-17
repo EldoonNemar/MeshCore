@@ -144,15 +144,15 @@ private:
   
   // Let's Mesh Analyzer support
   bool _analyzer_us_enabled;
-  bool _analyzer_eu_enabled;
+  bool _analyzer_ecmc_enabled;
   static const size_t AUTH_TOKEN_SIZE = 768;
   char* _auth_token_us; // JWT token for US server (PSRAM when BOARD_HAS_PSRAM)
-  char* _auth_token_eu; // JWT token for EU server (PSRAM when BOARD_HAS_PSRAM)
+  char* _auth_token_ecmc; // JWT token for ECMC server (PSRAM when BOARD_HAS_PSRAM)
   char _analyzer_username[70]; // Username in format v1_{UPPERCASE_PUBLIC_KEY}
   
   // Token expiration tracking
   unsigned long _token_us_expires_at;
-  unsigned long _token_eu_expires_at;
+  unsigned long _token_ecmc_expires_at;
   
   // Memory pressure monitoring
   unsigned long _last_memory_check;
@@ -161,9 +161,9 @@ private:
   unsigned long _fragmentation_pressure_since;  // 0 = not under pressure; else first time max_alloc < threshold
   unsigned long _last_critical_check_run;  // Throttle: run unified check at most every 60s
   unsigned long _last_token_renewal_attempt_us;
-  unsigned long _last_token_renewal_attempt_eu;
+  unsigned long _last_token_renewal_attempt_ecmc;
   unsigned long _last_reconnect_attempt_us;
-  unsigned long _last_reconnect_attempt_eu;
+  unsigned long _last_reconnect_attempt_ecmc;
   
   // Status publish retry tracking
   unsigned long _last_status_retry;  // Track last retry attempt (separate from successful publish)
@@ -174,7 +174,7 @@ private:
   
   // PsychicMqttClient instances for different brokers
   PsychicMqttClient* _analyzer_us_client;
-  PsychicMqttClient* _analyzer_eu_client;
+  PsychicMqttClient* _analyzer_ecmc_client;
   
   // Configuration validation state
   bool _config_valid;
@@ -189,7 +189,7 @@ private:
   
   // Throttle logging for analyzer client disconnected messages
   unsigned long _last_analyzer_us_log;
-  unsigned long _last_analyzer_eu_log;
+  unsigned long _last_analyzer_ecmc_log;
   static const unsigned long ANALYZER_LOG_INTERVAL = 30000; // Log every 30 seconds max
   unsigned long _last_config_warning; // Throttle configuration mismatch warnings
   static const unsigned long CONFIG_WARNING_INTERVAL = 300000; // Log every 5 minutes max
@@ -205,7 +205,7 @@ private:
   uint8_t _main_broker_reconnect_backoff_attempt;  // 0..5 → 15s, 30s, 60s, 120s, 300s
   // Analyzer reconnect backoff (reset when that client is connected)
   uint8_t _analyzer_us_reconnect_backoff_attempt;  // 0..4 → 60s, 120s, 240s, 300000
-  uint8_t _analyzer_eu_reconnect_backoff_attempt;
+  uint8_t _analyzer_ecmc_reconnect_backoff_attempt;
   
   // Optional pointers for collecting stats internally (set by mesh if available)
   mesh::Dispatcher* _dispatcher;  // For air times and errors

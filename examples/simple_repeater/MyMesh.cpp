@@ -961,12 +961,12 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   StrHelper::strncpy(_prefs.wifi_password, "password_here", sizeof(_prefs.wifi_password));
 
   // Timezone defaults (Pacific Time with DST support)
-  StrHelper::strncpy(_prefs.timezone_string, "America/Los_Angeles", sizeof(_prefs.timezone_string));
+  StrHelper::strncpy(_prefs.timezone_string, "America/New_York", sizeof(_prefs.timezone_string));
   _prefs.timezone_offset = -8; // fallback
 
   // Let's Mesh Analyzer defaults (both enabled by default)
   _prefs.mqtt_analyzer_us_enabled = 1; // enabled
-  _prefs.mqtt_analyzer_eu_enabled = 1; // enabled
+  _prefs.mqtt_analyzer_ecmc_enabled = 1; // enabled
 
   _prefs.adc_multiplier = 0.0f; // 0.0f means use default board multiplier
 

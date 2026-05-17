@@ -703,7 +703,7 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   
   // Let's Mesh Analyzer defaults (same as repeater - both enabled by default)
   _prefs.mqtt_analyzer_us_enabled = 1; // enabled
-  _prefs.mqtt_analyzer_eu_enabled = 1; // enabled
+  _prefs.mqtt_analyzer_ecmc_enabled = 1; // enabled
 
   next_post_idx = 0;
   next_client_idx = 0;

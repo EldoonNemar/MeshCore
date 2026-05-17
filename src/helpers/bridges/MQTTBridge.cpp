@@ -114,9 +114,9 @@ void MQTTBridge::formatMqttStatusReply(char* buf, size_t bufsize, const NodePref
   if (prefs->mqtt_analyzer_us_enabled) {
     us = (b->_analyzer_us_client && b->_analyzer_us_client->connected()) ? "connected" : "disconnected";
   }
-  const char* eu = "off";
-  if (prefs->mqtt_analyzer_eu_enabled) {
-    eu = (b->_analyzer_eu_client && b->_analyzer_eu_client->connected()) ? "connected" : "disconnected";
+  const char* ecmc = "off";
+  if (prefs->mqtt_analyzer_ecmc_enabled) {
+    ecmc = (b->_analyzer_ecmc_client && b->_analyzer_ecmc_client->connected()) ? "connected" : "disconnected";
   }
   int q = 0;
 #ifdef ESP_PLATFORM
@@ -126,8 +126,8 @@ void MQTTBridge::formatMqttStatusReply(char* buf, size_t bufsize, const NodePref
 #else
   q = b->_queue_count;
 #endif
-  snprintf(buf, bufsize, "> msgs: %s, broker: %s, us: %s, eu: %s, queue: %d",
-           msgs, broker, us, eu, q);
+  snprintf(buf, bufsize, "> msgs: %s, broker: %s, us: %s, ecmc: %s, queue: %d",
+           msgs, broker, us, ecmc, q);
 }
 
 MQTTBridge::MQTTBridge(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCClock *rtc, mesh::LocalIdentity *identity)
@@ -136,15 +136,15 @@ MQTTBridge::MQTTBridge(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCCloc
       _last_status_publish(0), _last_status_retry(0), _status_interval(300000), // 5 minutes default
               _ntp_client(_ntp_udp, "pool.ntp.org", 0, 60000), _last_ntp_sync(0), _ntp_synced(false), _ntp_sync_pending(false),
               _timezone(nullptr), _last_raw_len(0), _last_snr(0), _last_rssi(0), _last_raw_timestamp(0),
-              _analyzer_us_enabled(false), _analyzer_eu_enabled(false), _identity(identity),
-              _analyzer_us_client(nullptr), _analyzer_eu_client(nullptr), _config_valid(false),
+              _analyzer_us_enabled(false), _analyzer_ecmc_enabled(false), _identity(identity),
+              _analyzer_us_client(nullptr), _analyzer_ecmc_client(nullptr), _config_valid(false),
               _cached_has_brokers(false), _cached_has_analyzer_servers(false),
               _last_memory_check(0), _skipped_publishes(0), _last_fragmentation_recovery(0),
               _fragmentation_pressure_since(0), _last_critical_check_run(0),
               _last_no_broker_log(0), _last_config_warning(0), _dispatcher(nullptr), _radio(nullptr), _board(nullptr), _ms(nullptr),
               _last_wifi_check(0), _last_wifi_status(WL_DISCONNECTED), _wifi_status_initialized(false),
               _wifi_disconnected_time(0), _last_wifi_reconnect_attempt(0), _wifi_reconnect_backoff_attempt(0),
-              _main_broker_reconnect_backoff_attempt(0), _analyzer_us_reconnect_backoff_attempt(0), _analyzer_eu_reconnect_backoff_attempt(0)
+              _main_broker_reconnect_backoff_attempt(0), _analyzer_us_reconnect_backoff_attempt(0), _analyzer_ecmc_reconnect_backoff_attempt(0)
 #ifdef ESP_PLATFORM
               , _packet_queue_handle(nullptr), _mqtt_task_handle(nullptr), _raw_data_mutex(nullptr), _mqtt_task_stack(nullptr), _packet_queue_storage(nullptr)
 #else
@@ -198,13 +198,13 @@ MQTTBridge::MQTTBridge(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCCloc
   // Initialize throttle log timers
   _last_no_broker_log = 0;
   _last_analyzer_us_log = 0;
-  _last_analyzer_eu_log = 0;
+  _last_analyzer_ecmc_log = 0;
   
   // JWT token buffers: allocate in PSRAM when available (plan §2)
   _auth_token_us = (char*)psram_malloc(AUTH_TOKEN_SIZE);
-  _auth_token_eu = (char*)psram_malloc(AUTH_TOKEN_SIZE);
+  _auth_token_ecmc = (char*)psram_malloc(AUTH_TOKEN_SIZE);
   if (_auth_token_us) _auth_token_us[0] = '\0';
-  if (_auth_token_eu) _auth_token_eu[0] = '\0';
+  if (_auth_token_ecmc) _auth_token_ecmc[0] = '\0';
   
   // Raw radio buffer in PSRAM when available (plan §6)
   _last_raw_data = (uint8_t*)psram_malloc(LAST_RAW_DATA_SIZE);
@@ -367,10 +367,10 @@ void MQTTBridge::begin() {
   
   // Setup Let's Mesh Analyzer servers configuration
   _analyzer_us_enabled = _prefs->mqtt_analyzer_us_enabled;
-  _analyzer_eu_enabled = _prefs->mqtt_analyzer_eu_enabled;
+  _analyzer_ecmc_enabled = _prefs->mqtt_analyzer_ecmc_enabled;
   MQTT_DEBUG_PRINTLN("Analyzer servers - US: %s, EU: %s", 
                      _analyzer_us_enabled ? "enabled" : "disabled",
-                     _analyzer_eu_enabled ? "enabled" : "disabled");
+                     _analyzer_ecmc_enabled ? "enabled" : "disabled");
   
   // Create FreeRTOS task for MQTT/WiFi processing on Core 0
   #ifndef MQTT_TASK_CORE
@@ -453,7 +453,7 @@ void MQTTBridge::begin() {
   
   setBroker(0, _prefs->mqtt_server, _prefs->mqtt_port, _prefs->mqtt_username, _prefs->mqtt_password, true);
   _analyzer_us_enabled = _prefs->mqtt_analyzer_us_enabled;
-  _analyzer_eu_enabled = _prefs->mqtt_analyzer_eu_enabled;
+  _analyzer_ecmc_enabled = _prefs->mqtt_analyzer_ecmc_enabled;
   setupAnalyzerClients();
   connectToBrokers();
   #endif
@@ -516,10 +516,10 @@ void MQTTBridge::end() {
     delete _analyzer_us_client;
     _analyzer_us_client = nullptr;
   }
-  if (_analyzer_eu_client) {
-    _analyzer_eu_client->disconnect();
-    delete _analyzer_eu_client;
-    _analyzer_eu_client = nullptr;
+  if (_analyzer_ecmc_client) {
+    _analyzer_ecmc_client->disconnect();
+    delete _analyzer_ecmc_client;
+    _analyzer_ecmc_client = nullptr;
   }
   
   // Clean up queued packet references
@@ -552,8 +552,8 @@ void MQTTBridge::end() {
   // Free PSRAM-backed JWT token buffers (plan §2)
   psram_free(_auth_token_us);
   _auth_token_us = nullptr;
-  psram_free(_auth_token_eu);
-  _auth_token_eu = nullptr;
+  psram_free(_auth_token_ecmc);
+  _auth_token_ecmc = nullptr;
   psram_free(_last_raw_data);
   _last_raw_data = nullptr;
   
@@ -653,7 +653,7 @@ void MQTTBridge::mqttTaskLoop() {
     if (now - last_analyzer_check > 5000) {
       last_analyzer_check = now;
       if (_analyzer_us_enabled != _prefs->mqtt_analyzer_us_enabled || 
-          _analyzer_eu_enabled != _prefs->mqtt_analyzer_eu_enabled) {
+          _analyzer_ecmc_enabled != _prefs->mqtt_analyzer_ecmc_enabled) {
         MQTT_DEBUG_PRINTLN("Analyzer settings changed - updating...");
         setupAnalyzerServers();
       }
@@ -757,7 +757,7 @@ void MQTTBridge::mqttTaskLoop() {
     static unsigned long last_analyzer_status_update = 0;
     if (now - last_analyzer_status_update > 5000) {
       _cached_has_analyzer_servers = (_analyzer_us_enabled && _analyzer_us_client && _analyzer_us_client->connected()) ||
-                                     (_analyzer_eu_enabled && _analyzer_eu_client && _analyzer_eu_client->connected());
+                                     (_analyzer_ecmc_enabled && _analyzer_ecmc_client && _analyzer_ecmc_client->connected());
       last_analyzer_status_update = now;
     }
     
@@ -878,8 +878,8 @@ bool MQTTBridge::handleWiFiConnection(unsigned long now) {
       if (_analyzer_us_client) {
         _analyzer_us_client->disconnect();
       }
-      if (_analyzer_eu_client) {
-        _analyzer_eu_client->disconnect();
+      if (_analyzer_ecmc_client) {
+        _analyzer_ecmc_client->disconnect();
       }
     } else if (_wifi_disconnected_time > 0) {
       unsigned long disconnected_duration = now - _wifi_disconnected_time;
@@ -929,7 +929,7 @@ void MQTTBridge::loop() {
   if (millis() - last_analyzer_check > 5000) {
     last_analyzer_check = millis();
     if (_analyzer_us_enabled != _prefs->mqtt_analyzer_us_enabled || 
-        _analyzer_eu_enabled != _prefs->mqtt_analyzer_eu_enabled) {
+        _analyzer_ecmc_enabled != _prefs->mqtt_analyzer_ecmc_enabled) {
       MQTT_DEBUG_PRINTLN("Analyzer settings changed - updating...");
       setupAnalyzerServers();
     }
@@ -1053,7 +1053,7 @@ void MQTTBridge::onPacketReceived(mesh::Packet *packet) {
   // Check if we have any valid brokers to send to
   bool has_valid_brokers = _config_valid || 
                           (_analyzer_us_enabled && _analyzer_us_client) ||
-                          (_analyzer_eu_enabled && _analyzer_eu_client);
+                          (_analyzer_ecmc_enabled && _analyzer_ecmc_client);
   
   if (!has_valid_brokers) return;
   
@@ -1178,8 +1178,8 @@ void MQTTBridge::runCriticalMemoryCheckAndRecovery() {
     }
     int n_main = (_mqtt_client != nullptr) ? 1 : 0;
     int n_us = (_analyzer_us_client != nullptr) ? 1 : 0;
-    int n_eu = (_analyzer_eu_client != nullptr) ? 1 : 0;
-    MQTT_DEBUG_PRINTLN("MQTT clients active: %d (main=%d us=%d eu=%d)", n_main + n_us + n_eu, n_main, n_us, n_eu);
+    int n_ecmc = (_analyzer_ecmc_client != nullptr) ? 1 : 0;
+    MQTT_DEBUG_PRINTLN("MQTT clients active: %d (main=%d us=%d eu=%d)", n_main + n_us + n_ecmc, n_main, n_us, n_ecmc);
   }
 
   // Dedicated recovery: critical (<58k) recovers after 3 min; moderate (58k–70k) after 5 min
@@ -1216,10 +1216,10 @@ void MQTTBridge::recreateMqttClientsForFragmentationRecovery() {
     delete _analyzer_us_client;
     _analyzer_us_client = nullptr;
   }
-  if (_analyzer_eu_client) {
-    if (_analyzer_eu_client->connected()) _analyzer_eu_client->disconnect();
-    delete _analyzer_eu_client;
-    _analyzer_eu_client = nullptr;
+  if (_analyzer_ecmc_client) {
+    if (_analyzer_ecmc_client->connected()) _analyzer_ecmc_client->disconnect();
+    delete _analyzer_ecmc_client;
+    _analyzer_ecmc_client = nullptr;
   }
   for (int i = 0; i < MAX_MQTT_BROKERS_COUNT; i++) {
     if (_brokers[i].enabled) {
@@ -2138,18 +2138,18 @@ void MQTTBridge::storeRawRadioData(const uint8_t* raw_data, int len, float snr, 
 void MQTTBridge::setupAnalyzerServers() {
   // Update analyzer server settings from preferences
   bool previous_us_enabled = _analyzer_us_enabled;
-  bool previous_eu_enabled = _analyzer_eu_enabled;
+  bool previous_ecmc_enabled = _analyzer_ecmc_enabled;
   
   _analyzer_us_enabled = _prefs->mqtt_analyzer_us_enabled;
-  _analyzer_eu_enabled = _prefs->mqtt_analyzer_eu_enabled;
+  _analyzer_ecmc_enabled = _prefs->mqtt_analyzer_ecmc_enabled;
   
   MQTT_DEBUG_PRINTLN("Analyzer servers - US: %s, EU: %s", 
                      _analyzer_us_enabled ? "enabled" : "disabled",
-                     _analyzer_eu_enabled ? "enabled" : "disabled");
+                     _analyzer_ecmc_enabled ? "enabled" : "disabled");
   
   // Create authentication token if any analyzer servers are enabled
   // Only create tokens if WiFi is connected and NTP is synced (to ensure correct timestamps)
-  if (_analyzer_us_enabled || _analyzer_eu_enabled) {
+  if (_analyzer_us_enabled || _analyzer_ecmc_enabled) {
     if (WiFi.status() == WL_CONNECTED && _ntp_synced) {
       if (createAuthToken()) {
         MQTT_DEBUG_PRINTLN("Created authentication token for analyzer servers");
@@ -2157,8 +2157,8 @@ void MQTTBridge::setupAnalyzerServers() {
         if (_analyzer_us_enabled && _analyzer_us_client && _auth_token_us && strlen(_auth_token_us) > 0) {
           _analyzer_us_client->setCredentials(_analyzer_username, _auth_token_us);
         }
-        if (_analyzer_eu_enabled && _analyzer_eu_client && _auth_token_eu && strlen(_auth_token_eu) > 0) {
-          _analyzer_eu_client->setCredentials(_analyzer_username, _auth_token_eu);
+        if (_analyzer_ecmc_enabled && _analyzer_ecmc_client && _auth_token_ecmc && strlen(_auth_token_ecmc) > 0) {
+          _analyzer_ecmc_client->setCredentials(_analyzer_username, _auth_token_ecmc);
         }
       } else {
         MQTT_DEBUG_PRINTLN("Failed to create authentication token");
@@ -2172,7 +2172,7 @@ void MQTTBridge::setupAnalyzerServers() {
   
   // If settings changed and bridge is already initialized, recreate clients
   // This handles the case where settings change after initialization
-  if (_initialized && (previous_us_enabled != _analyzer_us_enabled || previous_eu_enabled != _analyzer_eu_enabled)) {
+  if (_initialized && (previous_us_enabled != _analyzer_us_enabled || previous_ecmc_enabled != _analyzer_ecmc_enabled)) {
     MQTT_DEBUG_PRINTLN("Analyzer server settings changed - recreating clients");
     setupAnalyzerClients();
   }
@@ -2227,17 +2227,17 @@ bool MQTTBridge::createAuthToken() {
     }
   }
   
-  // Create JWT token for EU server (only if buffer was allocated)
-  if (_analyzer_eu_enabled && _auth_token_eu) {
+  // Create JWT token for ECMC server (only if buffer was allocated)
+  if (_analyzer_ecmc_enabled && _auth_token_ecmc) {
     if (JWTHelper::createAuthToken(
-        *_identity, "mqtt-eu-v1.letsmesh.net", 
-        0, expires_in, _auth_token_eu, AUTH_TOKEN_SIZE,
+        *_identity, "mqtt-us.eastcoastmeshcore.com", 
+        0, expires_in, _auth_token_ecmc, AUTH_TOKEN_SIZE,
         owner_key, client_version, email)) {
       eu_token_created = true;
-      _token_eu_expires_at = time_synced ? (current_time + expires_in) : 0;
+      _token_ecmc_expires_at = time_synced ? (current_time + expires_in) : 0;
     } else {
-      MQTT_DEBUG_PRINTLN("Failed to create EU token");
-      _token_eu_expires_at = 0;
+      MQTT_DEBUG_PRINTLN("Failed to create ECMC token");
+      _token_ecmc_expires_at = 0;
     }
   }
   
@@ -2250,7 +2250,7 @@ bool MQTTBridge::createAuthToken() {
 }
 
 bool MQTTBridge::publishToAnalyzerServers(const char* topic, const char* payload, bool retained) {
-  if (!_analyzer_us_enabled && !_analyzer_eu_enabled) return false;
+  if (!_analyzer_us_enabled && !_analyzer_ecmc_enabled) return false;
   
   bool published = false;
   
@@ -2261,9 +2261,9 @@ bool MQTTBridge::publishToAnalyzerServers(const char* topic, const char* payload
     }
   }
   
-  // Publish to EU server if enabled
-  if (_analyzer_eu_enabled && _analyzer_eu_client) {
-    if (publishToAnalyzerClient(_analyzer_eu_client, topic, payload, retained)) {
+  // Publish to ECMC server if enabled
+  if (_analyzer_ecmc_enabled && _analyzer_ecmc_client) {
+    if (publishToAnalyzerClient(_analyzer_ecmc_client, topic, payload, retained)) {
       published = true;
     }
   }
@@ -2294,12 +2294,41 @@ const char* GTS_ROOT_R4 =
     "8RqZ7a2CPsgRbuvTPBwcOMBBmuFeU88+FSBX6+7iP0il8b4Z0QFqIwwMHfs/L6K1\n"
     "vepuoxtGzi4CZ68zJpiq1UvSqTbFJjtbD4seiMHl\n"
     "-----END CERTIFICATE-----\n";
+    
+// LETS Encrypt CA - ISRG Root X1
+const char* ISRG_ROOT_X1 =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIEVjCCAj6gAwIBAgIQY5WTY8JOcIJxWRi/w9ftVjANBgkqhkiG9w0BAQsFADBP\n"
+    "MQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJuZXQgU2VjdXJpdHkgUmVzZWFy\n"
+    "Y2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBYMTAeFw0yNDAzMTMwMDAwMDBa\n"
+    "Fw0yNzAzMTIyMzU5NTlaMDIxCzAJBgNVBAYTAlVTMRYwFAYDVQQKEw1MZXQncyBF\n"
+    "bmNyeXB0MQswCQYDVQQDEwJFODB2MBAGByqGSM49AgEGBSuBBAAiA2IABNFl8l7c\n"
+    "S7QMApzSsvru6WyrOq44ofTUOTIzxULUzDMMNMchIJBwXOhiLxxxs0LXeb5GDcHb\n"
+    "R6EToMffgSZjO9SNHfY9gjMy9vQr5/WWOrQTZxh7az6NSNnq3u2ubT6HTKOB+DCB\n"
+    "9TAOBgNVHQ8BAf8EBAMCAYYwHQYDVR0lBBYwFAYIKwYBBQUHAwIGCCsGAQUFBwMB\n"
+    "MBIGA1UdEwEB/wQIMAYBAf8CAQAwHQYDVR0OBBYEFI8NE6L2Ln7RUGwzGDhdWY4j\n"
+    "cpHKMB8GA1UdIwQYMBaAFHm0WeZ7tuXkAXOACIjIGlj26ZtuMDIGCCsGAQUFBwEB\n"
+    "BCYwJDAiBggrBgEFBQcwAoYWaHR0cDovL3gxLmkubGVuY3Iub3JnLzATBgNVHSAE\n"
+    "DDAKMAgGBmeBDAECATAnBgNVHR8EIDAeMBygGqAYhhZodHRwOi8veDEuYy5sZW5j\n"
+    "ci5vcmcvMA0GCSqGSIb3DQEBCwUAA4ICAQBnE0hGINKsCYWi0Xx1ygxD5qihEjZ0\n"
+    "RI3tTZz1wuATH3ZwYPIp97kWEayanD1j0cDhIYzy4CkDo2jB8D5t0a6zZWzlr98d\n"
+    "AQFNh8uKJkIHdLShy+nUyeZxc5bNeMp1Lu0gSzE4McqfmNMvIpeiwWSYO9w82Ob8\n"
+    "otvXcO2JUYi3svHIWRm3+707DUbL51XMcY2iZdlCq4Wa9nbuk3WTU4gr6LY8MzVA\n"
+    "aDQG2+4U3eJ6qUF10bBnR1uuVyDYs9RhrwucRVnfuDj29CMLTsplM5f5wSV5hUpm\n"
+    "Uwp/vV7M4w4aGunt74koX71n4EdagCsL/Yk5+mAQU0+tue0JOfAV/R6t1k+Xk9s2\n"
+    "HMQFeoxppfzAVC04FdG9M+AC2JWxmFSt6BCuh3CEey3fE52Qrj9YM75rtvIjsm/1\n"
+    "Hl+u//Wqxnu1ZQ4jpa+VpuZiGOlWrqSP9eogdOhCGisnyewWJwRQOqK16wiGyZeR\n"
+    "xs/Bekw65vwSIaVkBruPiTfMOo0Zh4gVa8/qJgMbJbyrwwG97z/PRgmLKCDl8z3d\n"
+    "tA0Z7qq7fta0Gl24uyuB05dqI5J1LvAzKuWdIjT1tP8qCoxSE/xpix8hX2dt3h+/\n"
+    "jujUgFPFZ0EVZ0xSyBNRF3MboGZnYXFUxpNjTWPKpagDHJQmqrAcDmWJnMsFY3jS\n"
+    "u1igv3OefnWjSQ==\n"
+    "-----END CERTIFICATE-----\n";
 
 void MQTTBridge::setupAnalyzerClients() {
   MQTT_DEBUG_PRINTLN("Setting up PsychicMqttClient WebSocket clients...");
   MQTT_DEBUG_PRINTLN("Analyzer servers - US: %s, EU: %s", 
                      _analyzer_us_enabled ? "enabled" : "disabled",
-                     _analyzer_eu_enabled ? "enabled" : "disabled");
+                     _analyzer_ecmc_enabled ? "enabled" : "disabled");
 
   // Clean up existing clients if they're no longer enabled
   // This handles the case where settings change after initialization
@@ -2310,14 +2339,14 @@ void MQTTBridge::setupAnalyzerClients() {
     _analyzer_us_client = nullptr;
   }
   
-  if (!_analyzer_eu_enabled && _analyzer_eu_client) {
+  if (!_analyzer_ecmc_enabled && _analyzer_ecmc_client) {
     MQTT_DEBUG_PRINTLN("EU analyzer disabled - cleaning up client");
-    _analyzer_eu_client->disconnect();
-    delete _analyzer_eu_client;
-    _analyzer_eu_client = nullptr;
+    _analyzer_ecmc_client->disconnect();
+    delete _analyzer_ecmc_client;
+    _analyzer_ecmc_client = nullptr;
   }
 
-  if (!_analyzer_us_enabled && !_analyzer_eu_enabled) {
+  if (!_analyzer_us_enabled && !_analyzer_ecmc_enabled) {
     MQTT_DEBUG_PRINTLN("No analyzer servers enabled, skipping PsychicMqttClient setup");
     return;
   }
@@ -2347,7 +2376,7 @@ void MQTTBridge::setupAnalyzerClients() {
       MQTT_DEBUG_PRINTLN("Connected to US analyzer");
       // Update cached analyzer server status
       _cached_has_analyzer_servers = (_analyzer_us_enabled && _analyzer_us_client && _analyzer_us_client->connected()) ||
-                                     (_analyzer_eu_enabled && _analyzer_eu_client && _analyzer_eu_client->connected());
+                                     (_analyzer_ecmc_enabled && _analyzer_ecmc_client && _analyzer_ecmc_client->connected());
       publishStatusToAnalyzerClient(_analyzer_us_client, "mqtt-us-v1.letsmesh.net");
     });
 
@@ -2355,7 +2384,7 @@ void MQTTBridge::setupAnalyzerClients() {
       MQTT_DEBUG_PRINTLN("Disconnected from US analyzer");
       // Update cached analyzer server status
       _cached_has_analyzer_servers = (_analyzer_us_enabled && _analyzer_us_client && _analyzer_us_client->connected()) ||
-                                     (_analyzer_eu_enabled && _analyzer_eu_client && _analyzer_eu_client->connected());
+                                     (_analyzer_ecmc_enabled && _analyzer_ecmc_client && _analyzer_ecmc_client->connected());
     });
 
     _analyzer_us_client->onError([this](esp_mqtt_error_codes error) {
@@ -2371,12 +2400,12 @@ void MQTTBridge::setupAnalyzerClients() {
     }
   }
 
-  // Setup EU server client (only if enabled and doesn't already exist)
-  if (_analyzer_eu_enabled && !_analyzer_eu_client) {
-    _analyzer_eu_client = new PsychicMqttClient();
+  // Setup ECMC server client (only if enabled and doesn't already exist)
+  if (_analyzer_ecmc_enabled && !_analyzer_ecmc_client) {
+    _analyzer_ecmc_client = new PsychicMqttClient();
     #ifdef MQTT_MEMORY_DEBUG
     // #region agent log
-    agentLogHeap("MQTTBridge.cpp:2182", "after_new_analyzer_eu_client", "H4",
+    agentLogHeap("MQTTBridge.cpp:2182", "after_new_analyzer_ecmc_client", "H4",
                  ESP.getFreeHeap(), ESP.getMaxAllocHeap(),
                  heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                  #ifdef BOARD_HAS_PSRAM
@@ -2389,34 +2418,34 @@ void MQTTBridge::setupAnalyzerClients() {
     #endif
     // Optimize MQTT client configuration for memory efficiency
     // Analyzer clients use 768-byte JWT tokens, need larger buffer for CONNECT message
-    optimizeMqttClientConfig(_analyzer_eu_client, true);
+    optimizeMqttClientConfig(_analyzer_ecmc_client, true);
 
-    // Set up event callbacks for EU server
-    _analyzer_eu_client->onConnect([this](bool sessionPresent) {
-      MQTT_DEBUG_PRINTLN("Connected to EU analyzer");
+    // Set up event callbacks for ECMC server
+    _analyzer_ecmc_client->onConnect([this](bool sessionPresent) {
+      MQTT_DEBUG_PRINTLN("Connected to ECMC analyzer");
       // Update cached analyzer server status
       _cached_has_analyzer_servers = (_analyzer_us_enabled && _analyzer_us_client && _analyzer_us_client->connected()) ||
-                                     (_analyzer_eu_enabled && _analyzer_eu_client && _analyzer_eu_client->connected());
-      publishStatusToAnalyzerClient(_analyzer_eu_client, "mqtt-eu-v1.letsmesh.net");
+                                     (_analyzer_ecmc_enabled && _analyzer_ecmc_client && _analyzer_ecmc_client->connected());
+      publishStatusToAnalyzerClient(_analyzer_ecmc_client, "mqtt-us.eastcoastmeshcore.com");
     });
 
-    _analyzer_eu_client->onDisconnect([this](bool sessionPresent) {
-      MQTT_DEBUG_PRINTLN("Disconnected from EU analyzer");
+    _analyzer_ecmc_client->onDisconnect([this](bool sessionPresent) {
+      MQTT_DEBUG_PRINTLN("Disconnected from ECMC analyzer");
       // Update cached analyzer server status
       _cached_has_analyzer_servers = (_analyzer_us_enabled && _analyzer_us_client && _analyzer_us_client->connected()) ||
-                                     (_analyzer_eu_enabled && _analyzer_eu_client && _analyzer_eu_client->connected());
+                                     (_analyzer_ecmc_enabled && _analyzer_ecmc_client && _analyzer_ecmc_client->connected());
     });
 
-    _analyzer_eu_client->onError([this](esp_mqtt_error_codes error) {
+    _analyzer_ecmc_client->onError([this](esp_mqtt_error_codes error) {
       MQTT_DEBUG_PRINTLN("EU analyzer error: type=%d, code=%d", error.error_type, error.connect_return_code);
     });
 
-    _analyzer_eu_client->setServer("wss://mqtt-eu-v1.letsmesh.net:443/mqtt");
-    if (_auth_token_eu) _analyzer_eu_client->setCredentials(_analyzer_username, _auth_token_eu);
-    _analyzer_eu_client->setCACert(GTS_ROOT_R4);
+    _analyzer_ecmc_client->setServer("wss://mqtt-us.eastcoastmeshcore.com:443/mqtt");
+    if (_auth_token_ecmc) _analyzer_ecmc_client->setCredentials(_analyzer_username, _auth_token_ecmc);
+    _analyzer_ecmc_client->setCACert(ISRG_ROOT_X1);
 
     if (WiFi.status() == WL_CONNECTED && _ntp_synced) {
-      _analyzer_eu_client->connect();
+      _analyzer_ecmc_client->connect();
     }
   }
 }
@@ -2434,9 +2463,9 @@ bool MQTTBridge::publishToAnalyzerClient(PsychicMqttClient* client, const char* 
     if (client == _analyzer_us_client && (now - _last_analyzer_us_log > ANALYZER_LOG_INTERVAL)) {
       should_log = true;
       _last_analyzer_us_log = now;
-    } else if (client == _analyzer_eu_client && (now - _last_analyzer_eu_log > ANALYZER_LOG_INTERVAL)) {
+    } else if (client == _analyzer_ecmc_client && (now - _last_analyzer_ecmc_log > ANALYZER_LOG_INTERVAL)) {
       should_log = true;
-      _last_analyzer_eu_log = now;
+      _last_analyzer_ecmc_log = now;
     }
     
     if (should_log) {
@@ -2448,8 +2477,8 @@ bool MQTTBridge::publishToAnalyzerClient(PsychicMqttClient* client, const char* 
   // Reset log timer when connected
   if (client == _analyzer_us_client) {
     _last_analyzer_us_log = 0;
-  } else if (client == _analyzer_eu_client) {
-    _last_analyzer_eu_log = 0;
+  } else if (client == _analyzer_ecmc_client) {
+    _last_analyzer_ecmc_log = 0;
   }
   
   int result = client->publish(topic, 1, retained, payload, strlen(payload));
@@ -2593,8 +2622,8 @@ void MQTTBridge::maintainAnalyzerConnections() {
   }
   
   // Create JWT tokens if they don't exist yet and conditions are met
-  if ((_analyzer_us_enabled || _analyzer_eu_enabled) && 
-      ((!_auth_token_us || strlen(_auth_token_us) == 0) && (!_auth_token_eu || strlen(_auth_token_eu) == 0))) {
+  if ((_analyzer_us_enabled || _analyzer_ecmc_enabled) && 
+      ((!_auth_token_us || strlen(_auth_token_us) == 0) && (!_auth_token_ecmc || strlen(_auth_token_ecmc) == 0))) {
     if (createAuthToken()) {
       if (_analyzer_us_enabled && _analyzer_us_client && _auth_token_us && strlen(_auth_token_us) > 0) {
         _analyzer_us_client->setCredentials(_analyzer_username, _auth_token_us);
@@ -2602,10 +2631,10 @@ void MQTTBridge::maintainAnalyzerConnections() {
           _analyzer_us_client->connect();
         }
       }
-      if (_analyzer_eu_enabled && _analyzer_eu_client && _auth_token_eu && strlen(_auth_token_eu) > 0) {
-        _analyzer_eu_client->setCredentials(_analyzer_username, _auth_token_eu);
-        if (!_analyzer_eu_client->connected()) {
-          _analyzer_eu_client->connect();
+      if (_analyzer_ecmc_enabled && _analyzer_ecmc_client && _auth_token_ecmc && strlen(_auth_token_ecmc) > 0) {
+        _analyzer_ecmc_client->setCredentials(_analyzer_username, _auth_token_ecmc);
+        if (!_analyzer_ecmc_client->connected()) {
+          _analyzer_ecmc_client->connect();
         }
       }
     }
@@ -2725,10 +2754,10 @@ void MQTTBridge::maintainAnalyzerConnections() {
     }
   }
   
-  // Check and renew EU server token if needed
-  if (_analyzer_eu_enabled && _analyzer_eu_client) {
-    if (_analyzer_eu_client->connected()) {
-      _analyzer_eu_reconnect_backoff_attempt = 0;
+  // Check and renew ECMC server token if needed
+  if (_analyzer_ecmc_enabled && _analyzer_ecmc_client) {
+    if (_analyzer_ecmc_client->connected()) {
+      _analyzer_ecmc_reconnect_backoff_attempt = 0;
     }
     // Check if token is expired or will expire soon
     // Only check expiration if time is synced - if time isn't synced, we can't validate expiration
@@ -2737,23 +2766,23 @@ void MQTTBridge::maintainAnalyzerConnections() {
     if (!time_synced) {
       // Time not synced yet - only renew if token is missing (expires_at == 0)
       // Don't renew if token exists but expiration is invalid - wait for time sync
-      token_needs_renewal = (_token_eu_expires_at == 0);
+      token_needs_renewal = (_token_ecmc_expires_at == 0);
     } else {
       // Time is synced - check if token needs renewal
-      token_needs_renewal = (_token_eu_expires_at == 0) || 
-                           !(_token_eu_expires_at >= 1000000000) || // Expiration time invalid (created before time sync)
-                           (current_time >= _token_eu_expires_at) ||
-                           (current_time >= (_token_eu_expires_at - RENEWAL_BUFFER));
+      token_needs_renewal = (_token_ecmc_expires_at == 0) || 
+                           !(_token_ecmc_expires_at >= 1000000000) || // Expiration time invalid (created before time sync)
+                           (current_time >= _token_ecmc_expires_at) ||
+                           (current_time >= (_token_ecmc_expires_at - RENEWAL_BUFFER));
     }
     
     // Throttle renewal attempts - don't try more than once per minute to avoid blocking
-    bool can_attempt_renewal = (now_millis - _last_token_renewal_attempt_eu) >= RENEWAL_THROTTLE_MS;
+    bool can_attempt_renewal = (now_millis - _last_token_renewal_attempt_ecmc) >= RENEWAL_THROTTLE_MS;
     
     // Check if client is disconnected and needs reconnection with new token
-    bool needs_reconnect = !_analyzer_eu_client->connected();
+    bool needs_reconnect = !_analyzer_ecmc_client->connected();
     
     if (token_needs_renewal && can_attempt_renewal) {
-      _last_token_renewal_attempt_eu = now_millis;
+      _last_token_renewal_attempt_ecmc = now_millis;
       
       // Prepare owner public key (if set) - convert to uppercase hex
       const char* owner_key = nullptr;
@@ -2779,18 +2808,18 @@ void MQTTBridge::maintainAnalyzerConnections() {
       }
       
       // Store old expiration time before renewing (to check if we need to disconnect)
-      unsigned long old_token_expires_at = _token_eu_expires_at;
+      unsigned long old_token_expires_at = _token_ecmc_expires_at;
       
       // Renew the token (only if buffer was allocated)
-      if (_auth_token_eu && JWTHelper::createAuthToken(
-          *_identity, "mqtt-eu-v1.letsmesh.net", 
-          0, 86400, _auth_token_eu, AUTH_TOKEN_SIZE,
+      if (_auth_token_ecmc && JWTHelper::createAuthToken(
+          *_identity, "mqtt-us.eastcoastmeshcore.com", 
+          0, 86400, _auth_token_ecmc, AUTH_TOKEN_SIZE,
           owner_key, client_version, email)) {
         unsigned long expires_in = 86400; // 24 hours
-        _token_eu_expires_at = time_synced ? (current_time + expires_in) : 0;
+        _token_ecmc_expires_at = time_synced ? (current_time + expires_in) : 0;
         MQTT_DEBUG_PRINTLN("EU token renewed");
         
-        _analyzer_eu_client->setCredentials(_analyzer_username, _auth_token_eu);
+        _analyzer_ecmc_client->setCredentials(_analyzer_username, _auth_token_ecmc);
         
         bool old_token_expired_or_imminent = !time_synced || 
                                             (old_token_expires_at == 0) ||
@@ -2798,30 +2827,30 @@ void MQTTBridge::maintainAnalyzerConnections() {
                                             (time_synced && old_token_expires_at >= 1000000000 && 
                                              current_time >= (old_token_expires_at - DISCONNECT_THRESHOLD));
         
-        if (old_token_expired_or_imminent && _analyzer_eu_client->connected()) {
-          _analyzer_eu_client->disconnect();
-          _last_reconnect_attempt_eu = now_millis;
-          _analyzer_eu_client->connect();
-        } else if (!_analyzer_eu_client->connected()) {
-          _last_reconnect_attempt_eu = now_millis;
-          _analyzer_eu_client->connect();
+        if (old_token_expired_or_imminent && _analyzer_ecmc_client->connected()) {
+          _analyzer_ecmc_client->disconnect();
+          _last_reconnect_attempt_ecmc = now_millis;
+          _analyzer_ecmc_client->connect();
+        } else if (!_analyzer_ecmc_client->connected()) {
+          _last_reconnect_attempt_ecmc = now_millis;
+          _analyzer_ecmc_client->connect();
         }
       } else {
-        MQTT_DEBUG_PRINTLN("Failed to renew EU token");
-        _token_eu_expires_at = 0;
+        MQTT_DEBUG_PRINTLN("Failed to renew ECMC token");
+        _token_ecmc_expires_at = 0;
       }
     } else if (needs_reconnect) {
-      unsigned long reconnect_elapsed = (now_millis >= _last_reconnect_attempt_eu) ?
-                                      (now_millis - _last_reconnect_attempt_eu) :
-                                      (ULONG_MAX - _last_reconnect_attempt_eu + now_millis + 1);
-      unsigned int idx = (_analyzer_eu_reconnect_backoff_attempt < 4) ? _analyzer_eu_reconnect_backoff_attempt : 3;
+      unsigned long reconnect_elapsed = (now_millis >= _last_reconnect_attempt_ecmc) ?
+                                      (now_millis - _last_reconnect_attempt_ecmc) :
+                                      (ULONG_MAX - _last_reconnect_attempt_ecmc + now_millis + 1);
+      unsigned int idx = (_analyzer_ecmc_reconnect_backoff_attempt < 4) ? _analyzer_ecmc_reconnect_backoff_attempt : 3;
       unsigned long delay_ms = ANALYZER_BACKOFF_MS[idx];
       if (reconnect_elapsed >= delay_ms) {
-        _last_reconnect_attempt_eu = now_millis;
-        if (_analyzer_eu_reconnect_backoff_attempt < 4) {
-          _analyzer_eu_reconnect_backoff_attempt++;
+        _last_reconnect_attempt_ecmc = now_millis;
+        if (_analyzer_ecmc_reconnect_backoff_attempt < 4) {
+          _analyzer_ecmc_reconnect_backoff_attempt++;
         }
-        _analyzer_eu_client->connect();
+        _analyzer_ecmc_client->connect();
       }
     }
   }
@@ -2960,12 +2989,12 @@ void MQTTBridge::syncTimeWithNTP() {
         MQTT_DEBUG_PRINTLN("US token expiration set after NTP sync: %lu", _token_us_expires_at);
       }
       
-      if (_analyzer_eu_enabled && _token_eu_expires_at == 0 && _auth_token_eu && strlen(_auth_token_eu) > 0) {
-        _token_eu_expires_at = current_time + expires_in;
+      if (_analyzer_ecmc_enabled && _token_ecmc_expires_at == 0 && _auth_token_ecmc && strlen(_auth_token_ecmc) > 0) {
+        _token_ecmc_expires_at = current_time + expires_in;
       }
       
-      if ((_analyzer_us_enabled || _analyzer_eu_enabled) && 
-          ((!_auth_token_us || strlen(_auth_token_us) == 0) && (!_auth_token_eu || strlen(_auth_token_eu) == 0))) {
+      if ((_analyzer_us_enabled || _analyzer_ecmc_enabled) && 
+          ((!_auth_token_us || strlen(_auth_token_us) == 0) && (!_auth_token_ecmc || strlen(_auth_token_ecmc) == 0))) {
         if (createAuthToken()) {
           if (_analyzer_us_enabled && _analyzer_us_client && _auth_token_us && strlen(_auth_token_us) > 0) {
             _analyzer_us_client->setCredentials(_analyzer_username, _auth_token_us);
@@ -2973,10 +3002,10 @@ void MQTTBridge::syncTimeWithNTP() {
               _analyzer_us_client->connect();
             }
           }
-          if (_analyzer_eu_enabled && _analyzer_eu_client && _auth_token_eu && strlen(_auth_token_eu) > 0) {
-            _analyzer_eu_client->setCredentials(_analyzer_username, _auth_token_eu);
-            if (!_analyzer_eu_client->connected()) {
-              _analyzer_eu_client->connect();
+          if (_analyzer_ecmc_enabled && _analyzer_ecmc_client && _auth_token_ecmc && strlen(_auth_token_ecmc) > 0) {
+            _analyzer_ecmc_client->setCredentials(_analyzer_username, _auth_token_ecmc);
+            if (!_analyzer_ecmc_client->connected()) {
+              _analyzer_ecmc_client->connect();
             }
           }
         } else {
