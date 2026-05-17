@@ -1,4 +1,4 @@
-name: Build Repeater Firmwares
+name: Build Repeater MQTT Firmwares
 
 permissions:
   contents: write

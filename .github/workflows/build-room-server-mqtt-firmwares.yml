@@ -1,4 +1,4 @@
-name: Build Room Server Firmwares
+name: Build Room Server MQTT Firmwares
 
 permissions:
   contents: write
