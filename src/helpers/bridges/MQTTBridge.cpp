@@ -162,7 +162,7 @@ MQTTBridge::MQTTBridge(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCCloc
   _status_enabled = true;
   _packets_enabled = true;
   _raw_enabled = false;
-  _tx_enabled = false;  // Disable TX packets by default
+  _tx_enabled = true;  // Enable TX packets by default
   
   // Initialize MQTT server settings with defaults (empty/null values)
   _prefs->mqtt_server[0] = '\0';  // Empty string
@@ -2230,7 +2230,7 @@ bool MQTTBridge::createAuthToken() {
   // Create JWT token for ECMC server (only if buffer was allocated)
   if (_analyzer_ecmc_enabled && _auth_token_ecmc) {
     if (JWTHelper::createAuthToken(
-        *_identity, "mqtt-us.eastcoastmeshcore.com", 
+        *_identity, "mqtt.eastme.sh", 
         0, expires_in, _auth_token_ecmc, AUTH_TOKEN_SIZE,
         owner_key, client_version, email)) {
       eu_token_created = true;
@@ -2426,7 +2426,7 @@ void MQTTBridge::setupAnalyzerClients() {
       // Update cached analyzer server status
       _cached_has_analyzer_servers = (_analyzer_us_enabled && _analyzer_us_client && _analyzer_us_client->connected()) ||
                                      (_analyzer_ecmc_enabled && _analyzer_ecmc_client && _analyzer_ecmc_client->connected());
-      publishStatusToAnalyzerClient(_analyzer_ecmc_client, "mqtt-us.eastcoastmeshcore.com");
+      publishStatusToAnalyzerClient(_analyzer_ecmc_client, "mqtt.eastme.sh");
     });
 
     _analyzer_ecmc_client->onDisconnect([this](bool sessionPresent) {
@@ -2440,7 +2440,7 @@ void MQTTBridge::setupAnalyzerClients() {
       MQTT_DEBUG_PRINTLN("EU analyzer error: type=%d, code=%d", error.error_type, error.connect_return_code);
     });
 
-    _analyzer_ecmc_client->setServer("wss://mqtt-us.eastcoastmeshcore.com:443/mqtt");
+    _analyzer_ecmc_client->setServer("wss://mqtt.eastme.sh:443/mqtt");
     if (_auth_token_ecmc) _analyzer_ecmc_client->setCredentials(_analyzer_username, _auth_token_ecmc);
     _analyzer_ecmc_client->setCACert(ISRG_ROOT_X1);
 
@@ -2812,7 +2812,7 @@ void MQTTBridge::maintainAnalyzerConnections() {
       
       // Renew the token (only if buffer was allocated)
       if (_auth_token_ecmc && JWTHelper::createAuthToken(
-          *_identity, "mqtt-us.eastcoastmeshcore.com", 
+          *_identity, "mqtt.eastme.sh", 
           0, 86400, _auth_token_ecmc, AUTH_TOKEN_SIZE,
           owner_key, client_version, email)) {
         unsigned long expires_in = 86400; // 24 hours

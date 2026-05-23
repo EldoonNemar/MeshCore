@@ -686,7 +686,7 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
 
   // MQTT defaults (same as repeater)
   StrHelper::strncpy(_prefs.mqtt_origin, "MeshCore-RoomServer", sizeof(_prefs.mqtt_origin));
-  StrHelper::strncpy(_prefs.mqtt_iata, "SEA", sizeof(_prefs.mqtt_iata));
+  StrHelper::strncpy(_prefs.mqtt_iata, "IAD", sizeof(_prefs.mqtt_iata));
   _prefs.mqtt_status_enabled = 1;    // enabled
   _prefs.mqtt_packets_enabled = 1;   // enabled
   _prefs.mqtt_raw_enabled = 0;       // disabled
@@ -698,7 +698,7 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   StrHelper::strncpy(_prefs.wifi_password, "password_here", sizeof(_prefs.wifi_password));
   
   // Timezone defaults (same as repeater - Pacific Time with DST support)
-  StrHelper::strncpy(_prefs.timezone_string, "America/Los_Angeles", sizeof(_prefs.timezone_string));
+  StrHelper::strncpy(_prefs.timezone_string, "America/New_York", sizeof(_prefs.timezone_string));
   _prefs.timezone_offset = -8; // fallback
   
   // Let's Mesh Analyzer defaults (same as repeater - both enabled by default)
